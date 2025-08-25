@@ -29,26 +29,6 @@ Realtime: Socket.IO
 
 Optional Notifications: Firebase Cloud Messaging (FCM)
 
-📂 Project Structure
-realtime-chat/
-│── chat/                  # Django app
-│   ├── models.py          # Room, Message models
-│   ├── views.py           # Login + Chat views
-│   ├── urls.py            # App routes
-│   ├── socketio_events.py # Socket.IO handlers
-│   ├── templates/
-│   │   ├── login.html
-│   │   ├── chat.html
-│   └── static/            # JS, CSS, images
-│
-│── config/              # Project settings
-│   ├── settings.py
-│   ├── urls.py
-│
-│── media/chat_images/     # Uploaded images
-│── requirements.txt
-│── README.md
-
 ⚙️ Installation & Setup
 1️⃣ Clone Repository
 git clone https://github.com/Toffan157/realtime-chat-django.git
