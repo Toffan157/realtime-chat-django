@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="chat-header">
+        <h2>{{ room_name }} Chat Room</h2>
+    </div>
+    
+    <div class="room-info">
+        You are chatting as <strong>{{ username }}</strong>
+    </div>
+    
+    <div class="chat-messages" id="chat-messages">
+        {% for message in messages %}
+            <div class="message {% if message.is_current_user %}message-self{% else %}message-other{% endif %}">
+                <div class="message-content">
+                    {% if message.content_type == "image" and message.image %}
+                        <img src="{{ message.image.url }}" alt="image" style="max-width:200px; border-radius:6px;">
+                    {% else %}
+                        {{ message.content }}
+                    {% endif %}
+                </div>
+                <div class="message-info">
+                    <span class="message-username">
+                        {% if not message.is_system and not message.is_current_user %}
+                            {{ message.username }}
+                        {% endif %}
+                    </span>
+                    <span class="message-time">{{ message.timestamp|date:"H:i" }}</span>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+    
+    <div class="chat-input">
+    <input type="text" id="message-input" class="chat-text" placeholder="Type your message..." autocomplete="off">
+    
+    <label for="image-input" class="chat-file-btn">📎</label>
+    <input type="file" id="image-input" accept="image/*" hidden>
+    
+    <button class="chat-send-btn" id="send-button">Send</button>
+</div>
+
+<div id="image-preview" style="display:none; margin-top:8px;">
+    <img id="preview-img" src="" alt="preview">
+    <button id="clear-image" class="preview-remove">✕</button>
+</div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const roomName = "{{ room_name|lower }}";
+    const username = "{{ username }}";
+    const socket = io();
+
+    const messagesContainer = document.getElementById('chat-messages');
+    let currentPage = 1;
+    let loadingHistory = false;
+    let hasMore = true;
+
+    // Join the room
+    socket.emit('join', { username: username, room: roomName });
+
+    // Handle incoming messages
+    socket.on('message', function(data) {
+        appendMessage(data, false);
+    });
+
+    // Append message (supports text + image)
+    function appendMessage(data, prepend=false) {
+        const isSystem = data.username === 'System';
+        const isCurrentUser = data.username === username;
+        const messageElement = document.createElement('div');
+
+        if (isSystem) {
+            messageElement.className = 'system-message';
+            messageElement.textContent = data.message;
+        } else {
+            messageElement.className = isCurrentUser ? 'message message-self' : 'message message-other';
+            
+            if (data.content_type === "image" && data.image) {
+                messageElement.innerHTML = `
+                    <div class="message-content">
+                        <img src="${data.image}" alt="image" style="max-width:200px; border-radius:6px;">
+                    </div>
+                    <div class="message-info">
+                        <span class="message-username">${!isCurrentUser ? data.username : ''}</span>
+                        <span class="message-time">${new Date(data.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                    </div>`;
+            } else {
+                messageElement.innerHTML = `
+                    <div class="message-content">${data.message || ''}</div>
+                    <div class="message-info">
+                        <span class="message-username">${!isCurrentUser ? data.username : ''}</span>
+                        <span class="message-time">${new Date(data.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                    </div>`;
+            }
+        }
+
+        if (prepend) {
+            messagesContainer.prepend(messageElement);
+        } else {
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    }
+
+    // Load older messages from REST API
+    async function loadHistory() {
+        if (loadingHistory || !hasMore) return;
+        loadingHistory = true;
+
+        try {
+            const res = await fetch(`/api/chat/${roomName}/messages/?page=${currentPage+1}&page_size=20`);
+            if (!res.ok) return;
+            const data = await res.json();
+
+            if (!data.messages || data.messages.length === 0) {
+                hasMore = false;
+                return;
+            }
+
+            const oldScrollHeight = messagesContainer.scrollHeight;
+            data.messages.reverse().forEach(msg => appendMessage(msg, true));
+            const newScrollHeight = messagesContainer.scrollHeight;
+            messagesContainer.scrollTop += (newScrollHeight - oldScrollHeight);
+
+            currentPage++;
+            hasMore = data.has_next;
+        } catch (err) {
+            console.error("History load failed:", err);
+        } finally {
+            loadingHistory = false;
+        }
+    }
+
+    // Detect scroll top → load history
+    messagesContainer.addEventListener('scroll', function() {
+        if (messagesContainer.scrollTop < 50) {
+            loadHistory();
+        }
+    });
+
+    // --- Sending messages (text + image) ---
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-button');
+    const imageInput = document.getElementById('image-input');
+    const previewBox = document.getElementById('image-preview');
+    const previewImg = document.getElementById('preview-img');
+    const clearImageBtn = document.getElementById('clear-image');
+
+    function sendMessage() {
+        const message = messageInput.value.trim();
+        const file = imageInput.files[0];
+
+        if (message) {
+            socket.emit('send_message', { message: message });
+            messageInput.value = '';
+        }
+
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                socket.emit('send_message', { image: e.target.result, content_type: "image" });
+            }
+            reader.readAsDataURL(file);
+
+            imageInput.value = "";
+            previewImg.src = "";
+            previewBox.style.display = "none";
+        }
+    }
+
+    sendButton.addEventListener('click', sendMessage);
+    messageInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    // Preview selected image
+    imageInput.addEventListener('change', function() {
+        const file = imageInput.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                previewImg.src = e.target.result;
+                previewBox.style.display = "block";
+            }
+            reader.readAsDataURL(file);
+        }
+    });
+
+    clearImageBtn.addEventListener('click', function() {
+        imageInput.value = "";
+        previewImg.src = "";
+        previewBox.style.display = "none";
+    });
+
+    // Scroll to bottom initially
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+});
+</script>
+{% endblock %}
