@@ -41,7 +41,7 @@ async def save_and_broadcast_message(room_name, username, message=None, image=No
     timestamp = datetime.now(timezone.utc).isoformat()
     msg_obj = None
 
-    if username != 'System' or ('has joined' not in message and 'has left' not in message):
+    if username != 'System':
         if content_type == Message.IMAGE and image:
             # Decode base64 -> save file
             format, imgstr = image.split(';base64,')
