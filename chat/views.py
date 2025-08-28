@@ -46,8 +46,8 @@ def chat_view(request, room_name):
             'image': message.image.url if message.image else None,
             'content_type': message.content_type,
             'timestamp': message.timestamp,
-            # 'is_system': message.username == 'System',
-            # 'is_current_user': message.username == username,
+            'is_system': message.username == 'System',
+            'is_current_user': message.username == username,
         })
     
     context = {
